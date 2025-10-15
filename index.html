@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Carte Interactive - Fête de l'Escalade 1602</title>
+    <style>
+        /* --- Font and Basic Styles --- */
+        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&display=swap');
+
+        :root {
+            --parchment-bg: #f5eeda;
+            --ink-text: #4a2c2a;
+            --border-color: #c8b7a6;
+            --hover-bg: #e9dccb;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: 'Cinzel', serif;
+            background-color: var(--parchment-bg);
+            color: var(--ink-text);
+        }
+
+        /* --- Main Layout --- */
+        .map-container {
+            display: flex;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* --- Sidebar / Legend --- */
+        #legend {
+            width: 300px;
+            height: 100%;
+            background-color: var(--parchment-bg);
+            border-right: 2px solid var(--border-color);
+            box-shadow: 4px 0 15px rgba(0,0,0,0.2);
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            z-index: 10;
+            transition: width 0.3s ease;
+        }
+
+        .legend-header {
+            padding: 20px;
+            text-align: center;
+            border-bottom: 2px solid var(--border-color);
+        }
+
+        .legend-header h1 {
+            margin: 0;
+            font-size: 1.8em;
+            font-weight: 700;
+        }
+
+        .legend-header p {
+            margin: 5px 0 0;
+            font-size: 0.9em;
+            font-style: italic;
+        }
+
+        .legend-list {
+            list-style: none;
+            padding: 10px 0;
+            margin: 0;
+            flex-grow: 1;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 20px;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .legend-item:last-child {
+            border-bottom: none;
+        }
+
+        .legend-item:hover {
+            background-color: var(--hover-bg);
+        }
+        
+        .legend-item.active {
+            background-color: #d8c8b4;
+            font-weight: bold;
+        }
+
+        .legend-icon {
+            width: 32px;
+            height: 32px;
+            margin-right: 15px;
+            flex-shrink: 0;
+        }
+
+        .legend-text {
+            font-size: 1em;
+        }
+
+        .show-all-btn {
+            padding: 15px;
+            background: var(--ink-text);
+            color: var(--parchment-bg);
+            text-align: center;
+            cursor: pointer;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-top: 2px solid var(--border-color);
+        }
+        .show-all-btn:hover{
+            background: #6a4c4a;
+        }
+
+        /* --- Map Canvas --- */
+        #map {
+            flex-grow: 1;
+            height: 100%;
+        }
+
+        /* --- InfoWindow (Popup) Styles --- */
+        .info-window-content {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            color: #333;
+            max-width: 250px;
+        }
+
+        .info-window-content h3 {
+            margin: 0 0 5px 0;
+            font-family: 'Cinzel', serif;
+            color: var(--ink-text);
+            font-size: 1.1em;
+        }
+        
+        .info-window-content p {
+            margin: 0;
+            line-height: 1.4;
+            font-size: 0.9em;
+        }
+        
+        .info-window-content .location {
+             font-style: italic;
+             color: #666;
+             margin-top: 8px;
+             border-top: 1px solid #eee;
+             padding-top: 5px;
+        }
+
+        /* --- Responsive Design --- */
+        @media (max-width: 768px) {
+            .map-container {
+                flex-direction: column;
+            }
+
+            #legend {
+                width: 100%;
+                height: auto;
+                max-height: 40vh; /* Limit height of legend on mobile */
+                border-right: none;
+                border-bottom: 2px solid var(--border-color);
+            }
+            
+            .legend-header h1 {
+                font-size: 1.5em;
+            }
+            
+            .legend-item {
+                 padding: 10px 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="map-container">
+        <aside id="legend">
+            <div class="legend-header">
+                <h1>L'Escalade 1602</h1>
+                <p>Activités du Week-end</p>
+            </div>
+            <ul class="legend-list" id="legend-list">
+                <!-- Legend items will be dynamically inserted here -->
+            </ul>
+            <div class="show-all-btn" id="show-all">Afficher Tout</div>
+        </aside>
+        <main id="map"></main>
+    </div>
+
+    <script>
+        // --- 1. CONFIGURATION: Themes, Colors, and Icons ---
+        const themes = {
+            "Échoppes": {
+                color: "#8B4513", // SaddleBrown
+                icon: `<path d="M20 7l-1.4-4H5.4L4 7H2v12h1.5a2.5 2.5 0 005 0H15.5a2.5 2.5 0 005 0H22V7h-2zM12 2.5L14 5.5h-4L12 2.5zM6 17a1 1 0 110-2 1 1 0 010 2zm12 0a1 1 0 110-2 1 1 0 010 2z" fill="currentColor"/>`
+            },
+            "Animations fixes": {
+                color: "#556B2F", // DarkOliveGreen
+                icon: `<path d="M5 21V3h14v10l-6 4-6-4V3H5zm2-2h10V5H7v14z" fill="currentColor"/>`
+            },
+            "Découverte insolite": {
+                color: "#4682B4", // SteelBlue
+                icon: `<path d="M12 2a9 9 0 00-9 9c0 4.41 3.59 8 8 8s8-3.59 8-8a9 9 0 00-7-8.83V2zm0 16a7 7 0 01-7-7 7 7 0 017-7v14zm-1-5h2v2h-2v-2zm0-4h2v2h-2V9z" fill="currentColor"/>`
+            },
+            "Où se restaurer?": {
+                color: "#A0522D", // Sienna
+                icon: `<path d="M16 2v2h-1v16h-2V4h-1V2h4zM8 2v8h2V2h4v18h-2v-6h-2v6H8V2h2z" fill="currentColor"/>`
+            },
+            "Animations spéciales": {
+                color: "#B22222", // Firebrick
+                icon: `<path d="M12 2l2.12 6.49L21 9.24l-5.5 4.7L17.24 21 12 17.25 6.76 21 8.5 13.94 3 9.24l6.88-.75L12 2z" fill="currentColor"/>`
+            },
+            "Pour les enfants": {
+                color: "#DAA520", // GoldenRod
+                icon: `<path d="M12 2a10 10 0 100 20 10 10 0 000-20zm-4 12a1 1 0 01-2 0V9a1 1 0 112 0v5zm8 0a1 1 0 01-2 0V9a1 1 0 112 0v5zm-4 2.5a3.5 3.5 0 01-3.5-3.5h7a3.5 3.5 0 01-3.5 3.5z" fill="currentColor"/>`
+            },
+            "Conférence": {
+                color: "#483D8B", // DarkSlateBlue
+                icon: `<path d="M4 2h16v2H4V2zm0 4h16v12H4V6zm2 2v8h12V8H6z" fill="currentColor"/>`
+            },
+            "Les démonstrations": {
+                color: "#800000", // Maroon
+                icon: `<path d="M21.71 3.29l-2-2a1 1 0 00-1.42 0L3.29 16.29a1 1 0 000 1.42l2 2a1 1 0 001.42 0L21.71 4.71a1 1 0 000-1.42zM5.41 17L17 5.41l1.29 1.3-11.59 11.58-1.3-1.29zM2.29 21.71l2-2a1 1 0 000-1.42L16.29 3.29a1 1 0 00-1.42 0l-2 2a1 1 0 000 1.42l11.58 11.58a1 1 0 001.42 0l2-2a1 1 0 000-1.42L7.71 4.29a1 1 0 00-1.42 0l-2 2a1 1 0 000 1.42L15.88 19.29a1 1 0 001.42 0l2-2a1 1 0 000-1.42l-2-2a1 1 0 00-1.42 0L4.71 7.71a1 1 0 000-1.42l2-2a1 1 0 00-1.42 0l-2 2a1 1 0 000 1.42l11.58 11.58a1 1 0 001.42 0l2-2a1 1 0 000-1.42l-2-2a1 1 0 00-1.42 0L2.29 21.71z" fill="currentColor"/>`
+            },
+            "Les visites": {
+                color: "#008080", // Teal
+                icon: `<path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5C21.27 7.61 17 4.5 12 4.5zm0 12c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8a3 3 0 100 6 3 3 0 000-6z" fill="currentColor"/>`
+            },
+            "Animations musicales": {
+                color: "#D2691E", // Chocolate
+                icon: `<path d="M12 3v10.55a4 4 0 102 3.45V3h4V1h-6v2zM10 19a2 2 0 114 0 2 2 0 01-4 0z" fill="currentColor"/>`
+            }
+        };
+
+        // --- 2. DATA: All map points ---
+        const locations = [
+            // Échoppes
+            { theme: "Échoppes", text: "Échoppe<br>10h00 à 22h00", location: "Bourg-de-Four", lat: 46.2013, lng: 6.1492 },
+            { theme: "Échoppes", text: "Échoppe<br>10h00 à 19h00", location: "Cathédrale", lat: 46.2020, lng: 6.1483 },
+            { theme: "Échoppes", text: "Échoppe<br>11h00 à 21h00", location: "Treille", lat: 46.2005, lng: 6.1466 },
+            { theme: "Échoppes", text: "Échoppe<br>11h00 à 18h00", location: "Promenade Saint-Antoine", lat: 46.2010, lng: 6.1517 },
+            { theme: "Échoppes", text: "Échoppe<br>10h00 à 21h00", location: "Passage de Monetier", lat: 46.2026, lng: 6.1478 },
+            // Où se restaurer?
+            { theme: "Où se restaurer?", text: "Marché Peneysan<br>14h00 à 19h00<br>Vente vin chaud, jus de pomme chaud, soupe...", location: "ANCIEN ARSENAL", lat: 46.2008, lng: 6.1472 },
+            { theme: "Où se restaurer?", text: "Bris de la marmite<br>18h00", location: "ANCIEN ARSENAL", lat: 46.2008, lng: 6.1472 },
+            { theme: "Où se restaurer?", text: "Stand Artisanes – Trophées Peneysan<br>12h00 à 19h30<br>Pain, fromage et soupe de la Mère Royaume", location: "ANCIEN ARSENAL", lat: 46.2008, lng: 6.1472 },
+            { theme: "Où se restaurer?", text: "Vin chaud et boissons<br>14h00 à 21h00", location: "Cathédrale et Cour Saint-Pierre", lat: 46.2018, lng: 6.1487 },
+            { theme: "Où se restaurer?", text: "Confiserie BRIJO<br>13h00 à 21h00<br>Bricelets, rissoles, tartines.", location: "Cathédrale et Cour Saint-Pierre", lat: 46.2018, lng: 6.1487 },
+            { theme: "Où se restaurer?", text: "Jambon à l’os<br>Dès 16h00", location: "Cathédrale et Cour Saint-Pierre", lat: 46.2019, lng: 6.1490 },
+            { theme: "Où se restaurer?", text: "Bière des Murailles<br>11h00 à 18h00", location: "Cathédrale et Cour Saint-Pierre", lat: 46.2019, lng: 6.1490 },
+            { theme: "Où se restaurer?", text: "Groupe de la campagne de Jussy<br>12h00 à 21h00<br>Sangliers rôtis, lentilles au lard...", location: "PROMENADE DE LA TREILLE", lat: 46.2006, lng: 6.1468 },
+            { theme: "Où se restaurer?", text: "Cavalerie<br>12h00 à 20h00<br>Cervelas grillés, pain, fromage, soupe", location: "TERRASSE D’AGRIPPA-D’AUBIGNÉ", lat: 46.2002, lng: 6.1458 },
+            // Les démonstrations
+            { theme: "Les démonstrations", text: "Démonstrations et initiations aux maniements de l’épée<br>15h00 à 16h00", location: "Cour de l’Hôtel-de-Ville", lat: 46.2010, lng: 6.1470 },
+            { theme: "Les démonstrations", text: "Démonstrations et duels à l’épée<br>14h00 à 15h25", location: "Cour Saint-Pierre", lat: 46.2017, lng: 6.1485 },
+            { theme: "Les démonstrations", text: "Tir de mousquets<br>14h25, 17h00, 20h30", location: "Cour Saint-Pierre", lat: 46.2017, lng: 6.1485 },
+            { theme: "Les démonstrations", text: "Maniement de la pique<br>14h00, 16h00, 20h25", location: "Bourg-de-Four", lat: 46.2014, lng: 6.1495 },
+            { theme: "Les démonstrations", text: "Falco, tir au canon<br>13h45 à 19h00", location: "Promenade de la Treille", lat: 46.2004, lng: 6.1464 },
+            { theme: "Les démonstrations", text: "Défense de rue<br>10h30", location: "Promenade de St-Antoine", lat: 46.2011, lng: 6.1520 },
+            // Animations fixes
+            { theme: "Animations fixes", text: "Présentation et essai d’un fifre et d’un tambour<br>14h00 à 18h00", location: "rue de l’hôtel-de-ville", lat: 46.2012, lng: 6.1475 },
+            { theme: "Animations fixes", text: "Camp militaire, montée à l’échelle<br>11h00 à 18h00", location: "Cour Saint-Pierre", lat: 46.2021, lng: 6.1488 },
+            { theme: "Animations fixes", text: "Exposition «Compagnie des Pasteurs»<br>14h00 à 17h00", location: "Chapelle des macchabées", lat: 46.2017, lng: 6.1482 },
+            { theme: "Animations fixes", text: "Tour de Poney<br>14h00 à 17h00 (CHF 6.-)", location: "Promenade de St-Antoine", lat: 46.2012, lng: 6.1523 },
+            { theme: "Animations fixes", text: "Démonstration de forge, ferrage de chevaux<br>12h00 à 16h30", location: "Promenade de St-Antoine", lat: 46.2010, lng: 6.1525 },
+            { theme: "Animations fixes", text: "Présentation des chevaux du cortège<br>10h00 à 19h00", location: "Terrasse d’Agrippa-d’Aubigné", lat: 46.2003, lng: 6.1460 },
+            // Animations spéciales
+            { theme: "Animations spéciales", text: "Culte de l’Escalade<br>18h30 à 19h30", location: "Cathédrale", lat: 46.2020, lng: 6.1483 },
+            { theme: "Animations spéciales", text: "Sentence et condamnation d’un Savoyard<br>14h00, 15h00, 16h00, 17h00", location: "Maison Tavel", lat: 46.2014, lng: 6.1476 },
+            { theme: "Animations spéciales", text: "Présentation du groupe Narro<br>14h00 à 19h", location: "Maison Tavel", lat: 46.2014, lng: 6.1476 },
+            // Les visites
+            { theme: "Les visites", text: "Visite Salons «Bleu» et «Jaune» et salle «L’Alabama»<br>14h00 à 18h40", location: "COUR DE L’HÔTEL-DE-VILLE", lat: 46.2010, lng: 6.1470 },
+            { theme: "Les visites", text: "«Sur les pas des Savoyards»<br>11h00 et 14h30", location: "Départ BOURG-DE-FOUR", lat: 46.2012, lng: 6.1498 },
+            { theme: "Les visites", text: "Tours et Carillon de la cathédrale<br>14h00 à 16h30", location: "CATHÉDRALE", lat: 46.2022, lng: 6.1484 },
+            { theme: "Les visites", text: "Visite de la Maison Tavel<br>13h30 et 18h40", location: "Maison Tavel", lat: 46.2014, lng: 6.1476 },
+            // Découverte insolite
+            { theme: "Découverte insolite", text: "Passage de Monetier ouvert<br>10h00 à 22h00", location: "Passage de monetier", lat: 46.2026, lng: 6.1478 },
+            { theme: "Découverte insolite", text: "Fortifications, hallebardes, instruments de torture...<br>10h00 à 22h00", location: "Passage de monetier", lat: 46.2027, lng: 6.1480 },
+            // Pour les enfants
+            { theme: "Pour les enfants", text: "Cortège aux lampions<br>19h45", location: "Cour saint-pierre", lat: 46.2019, lng: 6.1485 },
+            { theme: "Pour les enfants", text: "Jeux anciens et animations pour enfants<br>14h00 à 17h00", location: "Cour saint-pierre", lat: 46.2019, lng: 6.1485 },
+            // Animations musicales
+            { theme: "Animations musicales", text: "Trompettes de la Compagnie de 1602<br>15h15 & 18h30", location: "Cathédrale (intérieur)", lat: 46.2020, lng: 6.1483 },
+            { theme: "Animations musicales", text: "Concert de toutes les musiques de l’Escalade<br>16h00 à 16h40", location: "Cour Saint-Pierre", lat: 46.2018, lng: 6.1487 },
+            { theme: "Animations musicales", text: "Concert du Choeur Historique de l’Escalade<br>17h15 à 18h00", location: "Auditoire de calvin", lat: 46.2015, lng: 6.1487 },
+        ];
+        
+        let map;
+        let markers = [];
+        let openInfoWindow = null;
+
+        function initMap() {
+            // --- 3. MAP INITIALIZATION ---
+            const centerOfGenevaOldTown = { lat: 46.2015, lng: 6.1480 };
+            
+            // Custom map style for a 17th-century feel
+            const mapStyle = [
+                { elementType: "geometry", stylers: [{ color: "#f5eeda" }] },
+                { elementType: "labels.icon", stylers: [{ visibility: "off" }] },
+                { elementType: "labels.text.fill", stylers: [{ color: "#523735" }] },
+                { elementType: "labels.text.stroke", stylers: [{ color: "#f5eeda" }] },
+                { featureType: "administrative", elementType: "geometry", stylers: [{ visibility: "off" }] },
+                { featureType: "administrative.locality", elementType: "labels.text.fill", stylers: [{ color: "#8a5a44" }] },
+                { featureType: "poi", stylers: [{ visibility: "off" }] },
+                { featureType: "road", elementType: "geometry", stylers: [{ color: "#c8b7a6" }] },
+                { featureType: "road", elementType: "labels.icon", stylers: [{ visibility: "off" }] },
+                { featureType: "road", elementType: "labels.text.fill", stylers: [{ color: "#806B5A" }] },
+                { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#a49186" }] },
+                { featureType: "transit", stylers: [{ visibility: "off" }] },
+                { featureType: "water", elementType: "geometry", stylers: [{ color: "#a2d2ff" }] },
+                { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#686868" }] },
+            ];
+
+            map = new google.maps.Map(document.getElementById("map"), {
+                zoom: 17,
+                center: centerOfGenevaOldTown,
+                mapTypeId: 'terrain',
+                styles: mapStyle,
+                disableDefaultUI: true,
+                zoomControl: true,
+            });
+
+            populateLegend();
+            createMarkers();
+        }
+
+        // --- 4. MARKER CREATION & OVERLAP HANDLING ---
+        function createMarkers() {
+            const usedCoords = {};
+            locations.forEach(location => {
+                const themeInfo = themes[location.theme];
+                if (!themeInfo) {
+                    console.warn("Theme not found for location:", location);
+                    return;
+                }
+                
+                let lat = location.lat;
+                let lng = location.lng;
+                const coordKey = `${lat.toFixed(5)},${lng.toFixed(5)}`;
+                
+                // Avoid marker overlap
+                if (usedCoords[coordKey]) {
+                    const offsetAngle = usedCoords[coordKey] * (Math.PI / 4); // 45 degree increments
+                    lat += 0.00008 * Math.cos(offsetAngle);
+                    lng += 0.00008 * Math.sin(offsetAngle);
+                    usedCoords[coordKey]++;
+                } else {
+                    usedCoords[coordKey] = 1;
+                }
+
+                const markerIcon = {
+                    url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
+                        `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="${themeInfo.color}" width="36px" height="36px">
+                            <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+                            <g transform="scale(0.5) translate(12, 10)">${themeInfo.icon}</g>
+                        </svg>`
+                    )}`,
+                    scaledSize: new google.maps.Size(36, 36),
+                    anchor: new google.maps.Point(18, 36),
+                };
+
+                const marker = new google.maps.Marker({
+                    position: { lat, lng },
+                    map: map,
+                    icon: markerIcon,
+                    title: location.location,
+                    animation: google.maps.Animation.DROP,
+                    // Custom property to store theme for filtering
+                    category: location.theme 
+                });
+                
+                const infoWindowContent = `
+                    <div class="info-window-content">
+                        <h3>${location.theme}</h3>
+                        <p>${location.text}</p>
+                        <p class="location">${location.location}</p>
+                    </div>`;
+
+                const infoWindow = new google.maps.InfoWindow({
+                    content: infoWindowContent,
+                });
+
+                marker.addListener("click", () => {
+                    if (openInfoWindow) {
+                        openInfoWindow.close();
+                    }
+                    infoWindow.open(map, marker);
+                    openInfoWindow = infoWindow;
+                });
+                
+                markers.push(marker);
+            });
+        }
+        
+        // --- 5. LEGEND & FILTERING LOGIC ---
+        function populateLegend() {
+            const legendList = document.getElementById("legend-list");
+            for (const themeName in themes) {
+                const themeInfo = themes[themeName];
+                const item = document.createElement("li");
+                item.className = "legend-item";
+                item.dataset.theme = themeName;
+                item.innerHTML = `
+                    <div class="legend-icon">
+                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="${themeInfo.color}">
+                            ${themeInfo.icon}
+                        </svg>
+                    </div>
+                    <span class="legend-text">${themeName}</span>
+                `;
+                item.addEventListener('click', () => filterMarkers(themeName));
+                legendList.appendChild(item);
+            }
+        }
+        
+        function filterMarkers(themeName) {
+             // Deactivate all items first
+            document.querySelectorAll('.legend-item').forEach(item => item.classList.remove('active'));
+            // Activate clicked item
+            document.querySelector(`.legend-item[data-theme="${themeName}"]`).classList.add('active');
+
+            if (openInfoWindow) {
+                openInfoWindow.close();
+            }
+            markers.forEach(marker => {
+                if (marker.category === themeName) {
+                    marker.setVisible(true);
+                } else {
+                    marker.setVisible(false);
+                }
+            });
+        }
+        
+        document.getElementById('show-all').addEventListener('click', () => {
+            document.querySelectorAll('.legend-item').forEach(item => item.classList.remove('active'));
+            if (openInfoWindow) {
+                openInfoWindow.close();
+            }
+            markers.forEach(marker => marker.setVisible(true));
+        });
+
+    </script>
+    
+    <script async defer
+        src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCcg9-IYYSTOTMV7spdjy0dFhAbfY4De2k&callback=initMap">
+    </script>
+</body>
+</html>
+
